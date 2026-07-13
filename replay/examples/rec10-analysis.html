@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>DSV4 10条录制分析</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root{--bg:#fff;--panel:#f6f8fa;--border:#d0d7de;--text:#1f2328;--muted:#57606a;
+    --turns:#2563eb;--isl:#7c3aed;--osl:#059669;--delay:#b45309;--warn:#dc2626;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","PingFang SC",sans-serif;line-height:1.5;padding:30px 42px 80px;max-width:1180px;margin:0 auto}
+  h1{font-size:23px;margin:0 0 3px}
+  .sub{color:var(--muted);font-size:13.5px;margin-bottom:22px}
+  .sub code{background:#eaeef2;padding:1px 6px;border-radius:4px;font-size:12.5px}
+  .sectitle{font-size:16px;margin:28px 0 12px;padding-left:10px;border-left:4px solid var(--turns);font-weight:700}
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-bottom:20px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .stat .v{font-size:19px;font-weight:700}
+  .stat .l{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .chartbox{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:20px}
+  .chartbox h3{font-size:14px;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid var(--border);padding:5px 9px;text-align:left}
+  th{background:#eef1f4}
+  td.n{text-align:right;font-family:ui-monospace,Menlo,monospace}
+  .warn{color:var(--warn);font-weight:700}
+  .note{margin-top:18px;font-size:12.5px;color:var(--muted);border-top:1px dashed var(--border);padding-top:14px}
+</style></head><body>
+<h1>DSV4-Flash · SWE-bench Lite 10 条录制分析</h1>
+<div class="sub">mini-SWE-agent + DSV4-Flash · 纯 KvRouter (-w32, 无TA) · 录制于 H20 · <code>434 turns / 10 题</code></div>
+
+<div class="sectitle">均值 & 分布(维度:轮数 / ISL / OSL / tool delay)</div>
+<div class="stats">
+  <div class="stat"><div class="v" style="color:var(--turns)" id="s_tmean"></div><div class="l">轮数均值 (中位 <span id="s_tmed"></span>)</div></div>
+  <div class="stat"><div class="v" id="s_trange"></div><div class="l">轮数范围 min~max</div></div>
+  <div class="stat"><div class="v" style="color:var(--isl)" id="s_isl"></div><div class="l">ISL峰值均值 (max <span id="s_islmax"></span>)</div></div>
+  <div class="stat"><div class="v" style="color:var(--osl)" id="s_osl"></div><div class="l">总OSL均值 / 每轮 <span id="s_oslmean"></span></div></div>
+  <div class="stat"><div class="v" style="color:var(--delay)" id="s_delay"></div><div class="l">tool delay 中位均值 (s)</div></div>
+</div>
+
+<div class="chartbox"><h3>各题轮数(蓝)+ ISL峰值(紫线) —— 按轮数排序</h3><canvas id="c1" height="80"></canvas></div>
+<div class="chartbox"><h3>各题总 OSL(绿)—— 输出负载</h3><canvas id="c2" height="60"></canvas></div>
+
+<div class="sectitle">逐题明细</div>
+<div class="chartbox"><table id="tbl"><thead><tr><th>题目</th><th>轮数</th><th>ISL峰值</th><th>总OSL</th><th>每轮OSL均值</th><th>delay中位(s)</th><th>状态</th></tr></thead><tbody></tbody></table></div>
+
+<div class="note">
+<b>关键发现:</b> ①轮数重尾极强——均值 <span id="n1"></span> 但中位仅 <span id="n2"></span>,少数难题(76/135轮)拉高均值;②<b>1 题撞 step_limit=135</b>(astropy-14995,DSV4 反复调试没收敛被强制停);③长题 ISL 峰值破 14 万 tok(django-11019),是 KV 压力主来源;④tool delay 普遍很短(中位 ~0.15s,轻量 cat/sed/pytest),说明这批题瓶颈在 LLM 侧而非工具等待。
+<br><b>全量 300 条推算:</b> 按均值 43 轮/题 × 300 ≈ 13000 turns;耗时受少数撞顶长题主导。
+</div>
+
+<script>
+const A={"rows": [{"tid": "astropy/astropy-12907", "turns": 7, "isl_peak": 8492, "osl_tot": 2807, "osl_mean": 401.0, "delay_med": 0.36, "hit_limit": false}, {"tid": "django/django-11001", "turns": 15, "isl_peak": 7516, "osl_tot": 3752, "osl_mean": 250.1, "delay_med": 0.18, "hit_limit": false}, {"tid": "django/django-10914", "turns": 24, "isl_peak": 13079, "osl_tot": 5076, "osl_mean": 211.5, "delay_med": 0.16, "hit_limit": false}, {"tid": "astropy/astropy-14365", "turns": 25, "isl_peak": 19374, "osl_tot": 4980, "osl_mean": 199.2, "delay_med": 0.15, "hit_limit": false}, {"tid": "astropy/astropy-7746", "turns": 26, "isl_peak": 17627, "osl_tot": 8583, "osl_mean": 330.1, "delay_med": 0.19, "hit_limit": false}, {"tid": "astropy/astropy-14182", "turns": 37, "isl_peak": 25230, "osl_tot": 10479, "osl_mean": 283.2, "delay_med": 0.15, "hit_limit": false}, {"tid": "django/django-10924", "turns": 44, "isl_peak": 22777, "osl_tot": 8213, "osl_mean": 186.7, "delay_med": 0.18, "hit_limit": false}, {"tid": "astropy/astropy-6938", "turns": 45, "isl_peak": 23832, "osl_tot": 12326, "osl_mean": 273.9, "delay_med": 0.16, "hit_limit": false}, {"tid": "django/django-11019", "turns": 76, "isl_peak": 144323, "osl_tot": 129641, "osl_mean": 1705.8, "delay_med": 0.0, "hit_limit": false}, {"tid": "astropy/astropy-14995", "turns": 135, "isl_peak": 113001, "osl_tot": 92347, "osl_mean": 684.1, "delay_med": 0.0, "hit_limit": true}], "agg": {"n": 10, "turns_mean": 43.4, "turns_med": 31.5, "turns_min": 7, "turns_max": 135, "isl_peak_mean": 39525, "isl_peak_max": 144323, "osl_tot_mean": 27820, "osl_mean_all": 452.6, "delay_med_mean": 0.15, "total_turns": 434, "hit_limit_cnt": 1}}, R=A.rows, G=A.agg;
+s_tmean.textContent=G.turns_mean; s_tmed.textContent=G.turns_med;
+s_trange.textContent=G.turns_min+'~'+G.turns_max;
+s_isl.textContent=(G.isl_peak_mean/1000).toFixed(1)+'K'; s_islmax.textContent=(G.isl_peak_max/1000).toFixed(0)+'K';
+s_osl.textContent=(G.osl_tot_mean/1000).toFixed(1)+'K'; s_oslmean.textContent=G.osl_mean_all;
+s_delay.textContent=G.delay_med_mean;
+n1.textContent=G.turns_mean; n2.textContent=G.turns_med;
+const short=R.map(r=>r.tid.split('/')[1]||r.tid);
+new Chart(c1,{data:{labels:short,datasets:[
+  {type:'bar',label:'轮数',data:R.map(r=>r.turns),backgroundColor:R.map(r=>r.hit_limit?'#dc2626aa':'#2563eb99'),yAxisID:'y'},
+  {type:'line',label:'ISL峰值',data:R.map(r=>r.isl_peak),borderColor:'#7c3aed',yAxisID:'y2',tension:.2,pointRadius:3}]},
+  options:{scales:{y:{position:'left',title:{display:true,text:'轮数'}},y2:{position:'right',title:{display:true,text:'ISL峰值 tok'},grid:{drawOnChartArea:false}}},plugins:{legend:{labels:{font:{size:11}}}}}});
+new Chart(c2,{data:{labels:short,datasets:[{type:'bar',label:'总OSL',data:R.map(r=>r.osl_tot),backgroundColor:'#05966999'}]},
+  options:{plugins:{legend:{labels:{font:{size:11}}}}}});
+document.querySelector('#tbl tbody').innerHTML=R.map(r=>
+  `<tr><td>${r.tid}</td><td class=n>${r.turns}</td><td class=n>${r.isl_peak.toLocaleString()}</td><td class=n>${r.osl_tot.toLocaleString()}</td><td class=n>${r.osl_mean}</td><td class=n>${r.delay_med}</td><td>${r.hit_limit?'<span class=warn>⚠撞step_limit</span>':'✓自主完成'}</td></tr>`).join('');
+</script></body></html>
