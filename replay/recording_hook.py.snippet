@@ -1,0 +1,45 @@
+# Trajectory recording hook (added for AA-loadgen replay pipeline).
+# Activated only when MSWEA_RECORD_DIR is set. Wraps query_stream_timed to
+# dump each turn's {trajectory_id, session_id, turn, messages, output, ts}
+# to a single JSONL (one line per turn). Token counts computed offline at
+# conversion time via tokenizer. Safe/no-op when the env var is absent.
+# ============================================================================
+import json as _rec_json
+import os as _rec_os
+import threading as _rec_threading
+import time as _rec_time
+
+_REC_DIR = _rec_os.getenv("MSWEA_RECORD_DIR")
+if _REC_DIR:
+    _rec_os.makedirs(_REC_DIR, exist_ok=True)
+    _REC_PATH = _rec_os.path.join(_REC_DIR, "trajectory_turns.jsonl")
+    _REC_LOCK = _rec_threading.Lock()
+
+    _orig_query_stream_timed = VllmModel.query_stream_timed
+
+    def _recording_query_stream_timed(self, messages, **kwargs):
+        req_ts = _rec_time.time()
+        result, timing = _orig_query_stream_timed(self, messages, **kwargs)
+        try:
+            rec = {
+                "trajectory_id": self.config.trajectory_id or str(self.config.job_id),
+                "session_id": self.config.session_id,
+                "session_type_id": self.config.session_type_id,
+                "model_name": self.config.model_name,
+                "turn": self.n_calls,  # incremented inside orig call
+                "request_ts": req_ts,
+                "first_token_ts": timing.get("first_token_ts"),
+                "last_token_ts": timing.get("last_token_ts"),
+                "messages": messages,
+                "output": result.get("content", ""),
+            }
+            line = _rec_json.dumps(rec, ensure_ascii=False)
+            with _REC_LOCK:
+                with open(_REC_PATH, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception as _e:
+            logger.warning(f"[trajectory-record] failed: {_e}")
+        return result, timing
+
+    VllmModel.query_stream_timed = _recording_query_stream_timed
+    logger.warning(f"[trajectory-record] ACTIVE -> {_REC_PATH}")
