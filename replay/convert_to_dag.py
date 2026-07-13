@@ -84,13 +84,18 @@ def main():
                 # fall back to tokenizer/char estimate only if absent.
                 rec_osl = t.get("completion_tokens")
                 osl_val = int(rec_osl) if isinstance(rec_osl, int) and rec_osl > 0 else osl(t.get("output", ""))
-                dag_turns.append({
+                turn_obj = {
                     "messages": t["messages"],
                     "max_tokens": osl_val,
                     "model": args.model_name or t.get("model_name", "model"),
                     "delay": round(delay_ms, 1),
-                    "recorded_isl": t.get("prompt_tokens"),   # authoritative ISL (metadata)
-                })
+                }
+                # aiperf DagTurn is strict (extra="forbid"); custom metadata must
+                # live under `extra`. recorded_isl = authoritative engine ISL.
+                rec_isl = t.get("prompt_tokens")
+                if rec_isl is not None:
+                    turn_obj["extra"] = {"recorded_isl": rec_isl}
+                dag_turns.append(turn_obj)
                 prev_last_ts = t.get("last_token_ts")
             if dag_turns:
                 out.write(json.dumps({"session_id": sid, "turns": dag_turns}, ensure_ascii=False) + "\n")
