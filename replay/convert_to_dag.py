@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--out", dest="out", required=True)
     ap.add_argument("--tokenizer", default=None, help="HF tokenizer path for exact OSL; falls back to len/4 chars")
     ap.add_argument("--model-name", default=None, help="override model name written per turn")
+    ap.add_argument("--incremental", action="store_true", help="aiperf dag mode: each turn carries only NEW messages (pure-append). Default keeps full messages per turn for aa_replay.py.")
     args = ap.parse_args()
 
     tok = None
@@ -75,6 +76,7 @@ def main():
             turns.sort(key=lambda x: x.get("turn", 0))
             dag_turns = []
             prev_last_ts = None
+            prev_msg_count = 0  # for incremental (aiperf dag) mode
             for t in turns:
                 req_ts = t.get("request_ts")
                 delay_ms = 0.0
@@ -84,16 +86,31 @@ def main():
                 # fall back to tokenizer/char estimate only if absent.
                 rec_osl = t.get("completion_tokens")
                 osl_val = int(rec_osl) if isinstance(rec_osl, int) and rec_osl > 0 else osl(t.get("output", ""))
+                # aiperf dag mode uses pure-append accumulation: each turn carries
+                # ONLY the messages new since the previous turn (system stays on
+                # the root turn only). mini-SWE-agent re-sends the full history each
+                # turn, so slice off the shared prefix. --full keeps whole messages
+                # (for aa_replay.py which sends full context per turn).
+                all_msgs = t["messages"]
+                if args.incremental and prev_msg_count > 0:
+                    turn_msgs = all_msgs[prev_msg_count:]
+                else:
+                    turn_msgs = all_msgs
+                prev_msg_count = len(all_msgs)
                 turn_obj = {
-                    "messages": t["messages"],
+                    "messages": turn_msgs,
                     "max_tokens": osl_val,
                     "model": args.model_name or t.get("model_name", "model"),
                     "delay": round(delay_ms, 1),
                 }
                 # aiperf DagTurn is strict (extra="forbid"); custom metadata must
                 # live under `extra`. recorded_isl = authoritative engine ISL.
+                # NOTE: aiperf merges `extra` into the wire request body, so custom
+                # keys would be rejected by the server (400 Unsupported parameter).
+                # Only attach recorded_isl metadata in full mode (aa_replay ignores
+                # extra); skip it in --incremental (aiperf) mode.
                 rec_isl = t.get("prompt_tokens")
-                if rec_isl is not None:
+                if rec_isl is not None and not args.incremental:
                     turn_obj["extra"] = {"recorded_isl": rec_isl}
                 dag_turns.append(turn_obj)
                 prev_last_ts = t.get("last_token_ts")

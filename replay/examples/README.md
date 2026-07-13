@@ -33,3 +33,25 @@ Re-convert from raw:
 python ../convert_to_dag.py --in astropy-12907.dsv4flash.raw.jsonl \
     --out astropy-12907.dsv4flash.dag.jsonl --model-name dsv4flash
 ```
+
+## aiperf compatibility (verified end-to-end)
+
+`astropy-12907.dsv4flash.aiperf.dag.jsonl` — the same session in **incremental**
+form (each turn carries only NEW messages; `system` on root turn only), which is
+what aiperf's strict pure-append DagConversation requires. ~15x smaller than the
+full-context `.dag.jsonl` since history is not repeated.
+
+Verified end-to-end with aiperf 0.9.0:
+```bash
+aiperf profile -m dsv4flash --tokenizer /path/to/DeepSeek-V4-Flash \
+    --endpoint-type chat --streaming --url http://localhost:8000 \
+    --input-file astropy-12907.dsv4flash.aiperf.dag.jsonl \
+    --custom-dataset-type dag_jsonl --concurrency 1
+```
+Report in `aiperf_report/`. Gotchas resolved: (1) don't set HF_HUB_OFFLINE (breaks
+local tokenizer path); (2) use --incremental for aiperf (system-on-root rule);
+(3) aiperf merges `extra` into the wire body, so no custom keys (recorded_isl is
+dropped in incremental mode).
+
+- `.dag.jsonl` (full context per turn)      -> aa_replay.py
+- `.aiperf.dag.jsonl` (incremental)          -> aiperf
