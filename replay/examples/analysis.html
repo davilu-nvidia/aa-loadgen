@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trajectory + aiperf: astropy-12907 (DSV4-Flash)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root{--bg:#fff;--panel:#f6f8fa;--border:#d0d7de;--text:#1f2328;--muted:#57606a;
+    --isl:#2563eb;--osl:#059669;--delay:#b45309;--llm:#9333ea;--aiperf:#dc2626;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","PingFang SC",sans-serif;line-height:1.5;padding:30px 42px 80px;max-width:1180px;margin:0 auto}
+  h1{font-size:23px;margin:0 0 3px}
+  .sub{color:var(--muted);font-size:13.5px;margin-bottom:22px}
+  .sub code{background:#eaeef2;padding:1px 6px;border-radius:4px;font-size:12.5px}
+  h2sec{}
+  .sectitle{font-size:17px;margin:30px 0 14px;padding-left:11px;border-left:4px solid var(--isl);font-weight:700}
+  .sectitle.ap{border-color:var(--aiperf)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:13px 16px}
+  .stat .v{font-size:20px;font-weight:700}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .chartbox{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:20px}
+  .chartbox h3{font-size:15px;margin:0 0 12px;padding-left:9px;border-left:4px solid var(--isl)}
+  .chartbox h3.d{border-color:var(--delay)}
+  .phases{display:flex;margin-bottom:22px;font-size:11px;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+  .ph{padding:8px 6px;text-align:center;color:#fff;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+  th,td{border:1px solid var(--border);padding:5px 9px;text-align:left}
+  th{background:#eef1f4}
+  td.cmd{font-family:ui-monospace,Menlo,monospace;color:#3b4149;font-size:10.5px}
+  td.n{text-align:right;font-family:ui-monospace,Menlo,monospace}
+  .badge{display:inline-block;background:#e6f4ea;color:#087443;border:1px solid #9ae6b4;font-size:11px;padding:2px 9px;border-radius:20px;margin-left:8px}
+  .note{margin-top:18px;font-size:12.5px;color:var(--muted);border-top:1px dashed var(--border);padding-top:14px}
+</style></head><body>
+<h1>真实 Agent 轨迹 + aiperf 性能报告:astropy-12907 <span class="badge">aiperf 0.9.0 端到端验证 ✓</span></h1>
+<div class="sub">DSV4-Flash 解 astropy <code>separability_matrix</code> 嵌套 CompoundModel bug · mini-SWE-agent · 25轮 · 录制→dag_jsonl→aiperf replay</div>
+
+<div class="sectitle">① 负载画像(录制的 trajectory)</div>
+<div class="stats">
+  <div class="stat"><div class="v" style="color:var(--isl)">1607→20616</div><div class="l">ISL 累积 (tok)</div></div>
+  <div class="stat"><div class="v" style="color:var(--osl)">10666</div><div class="l">总 OSL (tok)</div></div>
+  <div class="stat"><div class="v" style="color:var(--delay)">~0.5s</div><div class="l">tool delay 中位</div></div>
+  <div class="stat"><div class="v">25</div><div class="l">轮数</div></div>
+</div>
+<div class="phases" id="phases"></div>
+<div class="chartbox"><h3>ISL 累积(蓝线)+ OSL(绿柱)</h3><canvas id="c1" height="85"></canvas></div>
+<div class="chartbox"><h3 class="d">tool delay(橙,录入·可移植)vs LLM耗时(紫,现测·不录入)</h3><canvas id="c2" height="65"></canvas></div>
+
+<div class="sectitle ap">② aiperf 实测性能报告(replay 这条 trace @ DSV4/H20)</div>
+<div class="stats">
+  <div class="stat"><div class="v" style="color:var(--aiperf)">218ms</div><div class="l">TTFT p50 (avg 658 / p99 7027)</div></div>
+  <div class="stat"><div class="v">7.14ms</div><div class="l">Inter-Token Latency</div></div>
+  <div class="stat"><div class="v">140</div><div class="l">输出吞吐 tok/s/user</div></div>
+  <div class="stat"><div class="v">19358</div><div class="l">Prefill 吞吐 tok/s/user (avg)</div></div>
+</div>
+<div class="chartbox"><h3>aiperf 关键指标(avg / p50 / p95 / p99)</h3>
+<table id="apt"><thead><tr><th>指标</th><th>avg</th><th>min</th><th>p50</th><th>p95</th><th>p99</th><th>max</th></tr></thead><tbody></tbody></table>
+</div>
+
+<div class="sectitle">③ 逐轮明细</div>
+<div class="chartbox"><table id="tbl"><thead><tr><th>turn</th><th>ISL</th><th>OSL</th><th>delay(s)</th><th>LLM(s)</th><th>agent 动作</th></tr></thead><tbody></tbody></table></div>
+
+<div class="note">
+<b>验证链:</b> mini-SWE-agent+DSV4 录制 → convert_to_dag.py(--incremental)→ aiperf 0.9.0 replay 25 轮 → 出报告。
+<b>①负载</b>是 trace 固化的(可移植);<b>②性能</b>是 aiperf 在 DSV4/H20 现测的——换 H100/开关TA replay 同一份 trace 即得对比。
+Prefill 吞吐 p99 达 45623 tok/s(长 ISL 轮次),体现上下文累积对 prefill 的压力。
+</div>
+
+<script>
+const D=[{"turn": 1, "isl": 1607, "osl": 218, "delay": 0.0, "llm": 1.96, "cmd": "find /testbed -type f -name \"*.py\" | xargs grep -l \"separabi"}, {"turn": 2, "isl": 1906, "osl": 65, "delay": 0.17, "llm": 0.6, "cmd": "cat -n /testbed/astropy/modeling/separable.py"}, {"turn": 3, "isl": 4850, "osl": 290, "delay": 0.14, "llm": 2.32, "cmd": "sed -n '178,216p' /testbed/astropy/modeling/separable.py"}, {"turn": 4, "isl": 5491, "osl": 1491, "delay": 0.14, "llm": 11.12, "cmd": "cat <<'EOF' > /testbed/reproduce.py import numpy as np from "}, {"turn": 5, "isl": 7116, "osl": 242, "delay": 1.03, "llm": 1.99, "cmd": "sed -n '219,287p' /testbed/astropy/modeling/separable.py"}, {"turn": 6, "isl": 7851, "osl": 2048, "delay": 0.14, "llm": 14.53, "cmd": "cat <<'EOF' > /tmp/fix_separable.py import numpy as np  # Re"}, {"turn": 7, "isl": 10003, "osl": 196, "delay": 0.0, "llm": 1.93, "cmd": "cd /testbed && python -c \" import astropy.modeling.separable"}, {"turn": 8, "isl": 10692, "osl": 691, "delay": 0.54, "llm": 5.11, "cmd": "cd /testbed && python << 'PYEOF' with open('astropy/modeling"}, {"turn": 9, "isl": 11405, "osl": 52, "delay": 0.16, "llm": 0.52, "cmd": "cd /testbed && python reproduce.py"}, {"turn": 10, "isl": 11591, "osl": 107, "delay": 0.54, "llm": 0.98, "cmd": "cd /testbed && python -c \" import astropy.modeling.separable"}, {"turn": 11, "isl": 12335, "osl": 1144, "delay": 0.54, "llm": 8.18, "cmd": "cd /testbed && python -c \" # Force reload import importlib i"}, {"turn": 12, "isl": 13564, "osl": 70, "delay": 0.54, "llm": 0.71, "cmd": "cd /testbed && sed -n '219,247p' astropy/modeling/separable."}, {"turn": 13, "isl": 13875, "osl": 341, "delay": 0.14, "llm": 2.6, "cmd": "cd /testbed && python -c \" import importlib import astropy.m"}, {"turn": 14, "isl": 14274, "osl": 387, "delay": 0.54, "llm": 2.92, "cmd": "cd /testbed && python -c \" from astropy.modeling import mode"}, {"turn": 15, "isl": 14792, "osl": 176, "delay": 0.54, "llm": 1.47, "cmd": "cd /testbed && python -c \" from astropy.modeling import mode"}, {"turn": 16, "isl": 15085, "osl": 1580, "delay": 0.54, "llm": 11.32, "cmd": "cd /testbed && python << 'PYEOF' with open('astropy/modeling"}, {"turn": 17, "isl": 16687, "osl": 22, "delay": 0.16, "llm": 0.53, "cmd": "cd /testbed && python reproduce.py"}, {"turn": 18, "isl": 16841, "osl": 719, "delay": 0.54, "llm": 5.26, "cmd": "cd /testbed && python << 'PYEOF' import numpy as np from ast"}, {"turn": 19, "isl": 17842, "osl": 182, "delay": 0.54, "llm": 1.51, "cmd": "cd /testbed && python -m pytest astropy/modeling/tests/test_"}, {"turn": 20, "isl": 18869, "osl": 86, "delay": 1.35, "llm": 0.9, "cmd": "cd /testbed && python -m pytest astropy/modeling/tests/test_"}, {"turn": 21, "isl": 19203, "osl": 90, "delay": 1.16, "llm": 0.79, "cmd": "cd /testbed && sed -n '219,250p' astropy/modeling/separable."}, {"turn": 22, "isl": 19587, "osl": 44, "delay": 0.14, "llm": 0.65, "cmd": "cd /testbed && sed -n '250,290p' astropy/modeling/separable."}, {"turn": 23, "isl": 19938, "osl": 44, "delay": 0.14, "llm": 0.54, "cmd": "cd /testbed && sed -n '290,300p' astropy/modeling/separable."}, {"turn": 24, "isl": 20093, "osl": 76, "delay": 0.14, "llm": 0.75, "cmd": "cd /testbed && python -m pytest astropy/modeling/tests/test_"}, {"turn": 25, "isl": 20616, "osl": 305, "delay": 1.01, "llm": 2.36, "cmd": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && "}], M={"Time to First Token (ms)": {"avg": "657.87", "min": "148.93", "max": "9031.74", "p50": "218.82", "p95": "677.52", "p99": "7027.19"}, "Inter Token Latency (ms)": {"avg": "7.14", "min": "7.07", "max": "7.17", "p50": "7.14", "p95": "7.16", "p99": "7.16"}, "Request Latency (ms)": {"avg": "2920.90", "min": "463.74", "max": "14164.67", "p50": "1698.43", "p95": "10326.17", "p99": "13359.51"}, "Input Sequence Length (tokens)": {"avg": "4965.83", "min": "218.00", "max": "7851.00", "p50": "5491.50", "p95": "7768.40", "p99": "7833.52"}, "Output Sequence Length (tokens)": {"avg": "317.72", "min": "22.00", "max": "1491.00", "p50": "172.00", "p95": "1071.40", "p99": "1407.72"}, "Output Token Throughput Per User (tokens/sec/user)": {"avg": "140.15", "min": "139.55", "max": "141.42", "p50": "140.02", "p95": "141.27", "p99": "141.41"}, "Prefill Throughput Per User (tokens/sec/user)": {"avg": "19358.35", "min": "726.20", "max": "45623.02", "p50": "17114.06", "p95": "39597.39", "p99": "44312.73"}};
+const phases=[["探索",1,3,"#2563eb"],["复现",4,5,"#0891b2"],["修复",6,8,"#059669"],["调试验证",9,18,"#b45309"],["测试",19,24,"#9333ea"],["提交",25,25,"#dc2626"]];
+document.getElementById('phases').innerHTML=phases.map(p=>{const w=(p[2]-p[1]+1)/25*100;return `<div class="ph" style="width:${w}%;background:${p[3]}">${p[0]}<br>t${p[1]}-${p[2]}</div>`}).join('');
+new Chart(document.getElementById('c1'),{data:{labels:D.map(d=>d.turn),datasets:[
+  {type:'line',label:'ISL累积',data:D.map(d=>d.isl),borderColor:'#2563eb',backgroundColor:'#2563eb22',yAxisID:'y',tension:.2,fill:true,pointRadius:2},
+  {type:'bar',label:'OSL',data:D.map(d=>d.osl),backgroundColor:'#05966988',yAxisID:'y2'}]},
+  options:{scales:{y:{position:'left',title:{display:true,text:'ISL'}},y2:{position:'right',title:{display:true,text:'OSL'},grid:{drawOnChartArea:false}}},plugins:{legend:{labels:{font:{size:11}}}}}});
+new Chart(document.getElementById('c2'),{data:{labels:D.map(d=>d.turn),datasets:[
+  {type:'bar',label:'tool delay(s)',data:D.map(d=>d.delay),backgroundColor:'#b4530988'},
+  {type:'line',label:'LLM耗时(s)',data:D.map(d=>d.llm),borderColor:'#9333ea',tension:.2,pointRadius:2}]},
+  options:{scales:{y:{title:{display:true,text:'秒'}}},plugins:{legend:{labels:{font:{size:11}}}}}});
+const short={'Time to First Token (ms)':'TTFT (ms)','Inter Token Latency (ms)':'Inter-Token Lat (ms)','Request Latency (ms)':'Request Lat (ms)','Input Sequence Length (tokens)':'ISL (tok)','Output Sequence Length (tokens)':'OSL (tok)','Output Token Throughput Per User (tokens/sec/user)':'输出吞吐 tok/s','Prefill Throughput Per User (tokens/sec/user)':'Prefill 吞吐 tok/s'};
+document.querySelector('#apt tbody').innerHTML=Object.entries(M).map(([k,v])=>`<tr><td>${short[k]||k}</td><td class=n>${v.avg}</td><td class=n>${v.min}</td><td class=n>${v.p50}</td><td class=n>${v.p95}</td><td class=n>${v.p99}</td><td class=n>${v.max}</td></tr>`).join('');
+document.querySelector('#tbl tbody').innerHTML=D.map(d=>`<tr><td>${d.turn}</td><td>${d.isl}</td><td>${d.osl}</td><td>${d.delay}</td><td>${d.llm}</td><td class=cmd>${d.cmd.replace(/</g,'&lt;')}</td></tr>`).join('');
+</script></body></html>
