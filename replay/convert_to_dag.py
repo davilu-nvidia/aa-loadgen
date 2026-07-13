@@ -80,11 +80,16 @@ def main():
                 delay_ms = 0.0
                 if prev_last_ts is not None and req_ts is not None:
                     delay_ms = max(0.0, (req_ts - prev_last_ts) * 1000.0)
+                # Prefer authoritative engine usage (completion_tokens) for OSL;
+                # fall back to tokenizer/char estimate only if absent.
+                rec_osl = t.get("completion_tokens")
+                osl_val = int(rec_osl) if isinstance(rec_osl, int) and rec_osl > 0 else osl(t.get("output", ""))
                 dag_turns.append({
                     "messages": t["messages"],
-                    "max_tokens": osl(t.get("output", "")),
+                    "max_tokens": osl_val,
                     "model": args.model_name or t.get("model_name", "model"),
                     "delay": round(delay_ms, 1),
+                    "recorded_isl": t.get("prompt_tokens"),   # authoritative ISL (metadata)
                 })
                 prev_last_ts = t.get("last_token_ts")
             if dag_turns:

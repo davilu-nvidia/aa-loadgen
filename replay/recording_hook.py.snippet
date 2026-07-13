@@ -18,8 +18,24 @@ if _REC_DIR:
     _orig_query_stream_timed = VllmModel.query_stream_timed
 
     def _recording_query_stream_timed(self, messages, **kwargs):
+        # Ask the engine to emit a usage chunk at the end of the stream so we can
+        # record authoritative prompt_tokens (ISL) / completion_tokens (OSL)
+        # instead of estimating from text length.
+        so = dict(kwargs.get("stream_options") or {})
+        so["include_usage"] = True
+        kwargs["stream_options"] = so
         req_ts = _rec_time.time()
         result, timing = _orig_query_stream_timed(self, messages, **kwargs)
+        # Pull usage from the last streamed chunk (dumped into extra.response).
+        prompt_tokens = completion_tokens = None
+        try:
+            resp = (result.get("extra") or {}).get("response") or {}
+            usage = resp.get("usage") or {}
+            if isinstance(usage, dict):
+                prompt_tokens = usage.get("prompt_tokens")
+                completion_tokens = usage.get("completion_tokens")
+        except Exception:
+            pass
         try:
             rec = {
                 "trajectory_id": self.config.trajectory_id or str(self.config.job_id),
@@ -30,6 +46,8 @@ if _REC_DIR:
                 "request_ts": req_ts,
                 "first_token_ts": timing.get("first_token_ts"),
                 "last_token_ts": timing.get("last_token_ts"),
+                "prompt_tokens": prompt_tokens,       # authoritative ISL
+                "completion_tokens": completion_tokens,  # authoritative OSL
                 "messages": messages,
                 "output": result.get("content", ""),
             }
