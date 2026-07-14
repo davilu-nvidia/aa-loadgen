@@ -35,9 +35,13 @@ class Metrics:
         self.req_ok = 0; self.req_err = 0
         self.total_out_tokens = 0; self.steps = 0; self.sessions_done = 0
 
-async def replay_session(sess, args, metrics, stop_ts):
-    session_id = sess["session_id"]
-    headers = {"Content-Type": "application/json", "x-dynamo-session-id": session_id}
+async def replay_session(sess, args, metrics, stop_ts, run_idx=0):
+    base_sid = sess["session_id"]
+    # nonce: 循环复用同一条时,给每个副本唯一id,破除跨副本prefix共享(压真实KV)
+    session_id = f"{base_sid}#r{run_idx}" if args.nonce else base_sid
+    headers = {"Content-Type": "application/json"}
+    if args.agent_context:
+        headers["x-dynamo-session-id"] = session_id
     for ti, turn in enumerate(sess["turns"]):
         if stop_ts and time.time() > stop_ts:
             break
@@ -61,7 +65,7 @@ async def replay_session(sess, args, metrics, stop_ts):
         try:
             async with args.session.post(f"{args.url}/chat/completions", json=body,
                                          headers=headers,
-                                         timeout=aiohttp.ClientTimeout(total=600)) as resp:
+                                         timeout=aiohttp.ClientTimeout(total=90)) as resp:
                 if resp.status != 200:
                     metrics.req_err += 1; await resp.read()
                     continue  # don't kill whole session on one bad turn
@@ -107,6 +111,8 @@ async def main():
     ap.add_argument("--duration", type=int, default=0, help="0 = replay whole pool once; >0 = cap seconds")
     ap.add_argument("--loop", action="store_true", help="loop the pool until duration elapses")
     ap.add_argument("--arm", default="A")
+    ap.add_argument("--nonce", action="store_true", help="inject per-replica nonce to break cross-copy prefix sharing (real KV pressure)")
+    ap.add_argument("--agent-context", action="store_true", help="send nvext.agent_context to trigger ThunderAgent program scheduling")
     ap.add_argument("--ignore-eos", action="store_true", default=True, help="force exact OSL via ignore_eos+min_tokens")
     ap.add_argument("--no-ignore-eos", dest="ignore_eos", action="store_false")
     ap.add_argument("--out", default="/tmp/aa_replay_result.json")
@@ -120,6 +126,7 @@ async def main():
 
     # work queue
     pool = itertools.cycle(sessions) if args.loop else iter(sessions)
+    run_counter = itertools.count()
     lock = asyncio.Lock()
     async def next_session():
         async with lock:
@@ -137,10 +144,16 @@ async def main():
                 s = await next_session()
                 if s is None:
                     return
-                await replay_session(s, args, metrics, stop_ts)
+                await replay_session(s, args, metrics, stop_ts, run_idx=next(run_counter))
         print(f"[replay] arm={args.arm} concurrency={args.concurrency} -> {args.url}")
         t_start = time.time()
-        await asyncio.gather(*[worker() for _ in range(args.concurrency)])
+        tasks=[asyncio.create_task(worker()) for _ in range(args.concurrency)]
+        try:
+            hard = (args.duration + 45) if args.duration>0 else None
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=hard)
+        except asyncio.TimeoutError:
+            for t in tasks: t.cancel()
+            print("[replay] hard deadline hit, forced finish")
         elapsed = time.time() - t_start
 
     def pct(a, p):
