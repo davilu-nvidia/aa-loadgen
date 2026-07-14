@@ -65,7 +65,7 @@ async def replay_session(sess, args, metrics, stop_ts, run_idx=0):
         try:
             async with args.session.post(f"{args.url}/chat/completions", json=body,
                                          headers=headers,
-                                         timeout=aiohttp.ClientTimeout(total=90)) as resp:
+                                         timeout=aiohttp.ClientTimeout(total=300)) as resp:
                 if resp.status != 200:
                     metrics.req_err += 1; await resp.read()
                     continue  # don't kill whole session on one bad turn
