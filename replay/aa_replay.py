@@ -32,19 +32,26 @@ def load_sessions(path):
 class Metrics:
     def __init__(self):
         self.ttft = []; self.out_speed = []
+        self.tpot = []; self.e2e = []
         self.req_ok = 0; self.req_err = 0
         self.total_out_tokens = 0; self.steps = 0; self.sessions_done = 0
 
 async def replay_session(sess, args, metrics, stop_ts, run_idx=0):
     base_sid = sess["session_id"]
+    _sess_t0 = time.time()
     # nonce: 循环复用同一条时,给每个副本唯一id,破除跨副本prefix共享(压真实KV)
     session_id = f"{base_sid}#r{run_idx}" if args.nonce else base_sid
     headers = {"Content-Type": "application/json"}
     if args.agent_context:
         headers["x-dynamo-session-id"] = session_id
+    n_turns = len(sess["turns"])
     for ti, turn in enumerate(sess["turns"]):
         if stop_ts and time.time() > stop_ts:
             break
+        req_headers = headers
+        if args.agent_context and ti == n_turns - 1:
+            req_headers = dict(headers)
+            req_headers["x-dynamo-session-final"] = "true"
         # inter-turn tool delay (recorded real wall-clock), skip before first turn
         if ti > 0:
             await asyncio.sleep(turn.get("delay", 0.0) / 1000.0)
@@ -64,7 +71,7 @@ async def replay_session(sess, args, metrics, stop_ts, run_idx=0):
         t0 = time.time(); ttft = None; out_tok = 0
         try:
             async with args.session.post(f"{args.url}/chat/completions", json=body,
-                                         headers=headers,
+                                         headers=req_headers,
                                          timeout=aiohttp.ClientTimeout(total=300)) as resp:
                 if resp.status != 200:
                     metrics.req_err += 1; await resp.read()
@@ -96,11 +103,20 @@ async def replay_session(sess, args, metrics, stop_ts, run_idx=0):
         if ttft is not None and out_tok > 0:
             metrics.ttft.append(ttft)
             metrics.out_speed.append(out_tok / max(1e-3, dt - ttft))
+            metrics.tpot.append((dt - ttft) / max(1, out_tok) * 1000.0)  # ms/token
             metrics.total_out_tokens += out_tok
             metrics.req_ok += 1; metrics.steps += 1
         else:
             metrics.req_err += 1
+    metrics.e2e.append(time.time() - _sess_t0)
     metrics.sessions_done += 1
+    try:
+        def _p50(a):
+            if not a: return 0
+            b=sorted(a); return b[len(b)//2]
+        with open("/tmp/replay_progress.txt","w") as _pf:
+            _pf.write(f"{metrics.sessions_done} done, ok={metrics.req_ok} err={metrics.req_err} steps={metrics.steps} ttft_p50={_p50(metrics.ttft):.3f} tpot_p50={_p50(metrics.tpot):.1f} e2e_p50={_p50(metrics.e2e):.1f}\n")
+    except Exception: pass
 
 async def main():
     ap = argparse.ArgumentParser()
@@ -169,6 +185,10 @@ async def main():
         "throughput_tok_s": round(metrics.total_out_tokens / elapsed, 1) if elapsed else 0,
         "ttft_p50_s": round(pct(metrics.ttft, 0.50), 3),
         "ttft_p95_s": round(pct(metrics.ttft, 0.95), 3),
+        "tpot_p50_ms": round(pct(metrics.tpot, 0.50), 1),
+        "tpot_p95_ms": round(pct(metrics.tpot, 0.95), 1),
+        "e2e_p50_s": round(pct(metrics.e2e, 0.50), 1),
+        "e2e_p95_s": round(pct(metrics.e2e, 0.95), 1),
         "out_speed_p25_tok_s": round(pct(metrics.out_speed, 0.25), 1),
         "out_speed_median_tok_s": round(pct(metrics.out_speed, 0.50), 1),
     }

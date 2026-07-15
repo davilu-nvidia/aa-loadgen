@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Agentic Serving · 实时监控</title>
+<style>
+  :root{
+    --bg:#f7f8fa;--surface:#fff;--border:#e3e6ea;--text:#1a1f28;--muted:#6b7280;--faint:#9aa1ac;
+    --ta:#7c3aed;--blue:#2563eb;--ok:#059669;--warn:#d97706;--red:#dc2626;--grid:#eef1f4;
+    --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","PingFang SC",sans-serif;
+    font-size:14px;line-height:1.5;display:flex;min-height:100vh}
+  /* sidebar */
+  .side{width:220px;background:var(--surface);border-right:1px solid var(--border);
+    padding:22px 0;position:fixed;height:100vh;display:flex;flex-direction:column}
+  .side .logo{padding:0 22px 18px;font-weight:800;font-size:16px;border-bottom:1px solid var(--border)}
+  .side .logo .s{display:block;font-size:11px;color:var(--muted);font-weight:500;margin-top:2px}
+  .side nav{padding:14px 12px;flex:1}
+  .side a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:var(--muted);
+    text-decoration:none;font-size:13.5px;font-weight:600;margin-bottom:2px}
+  .side a:hover{background:var(--grid);color:var(--text)}
+  .side a.on{background:#f3ebff;color:var(--ta)}
+  .side .stat{padding:14px 22px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+  .side .stat .live{display:flex;align-items:center;gap:7px;font-weight:700;color:var(--ok)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 1.6s infinite}
+  .stale .dot{background:var(--red)} .stale{color:var(--red)!important}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  /* main */
+  main{margin-left:220px;flex:1;padding:26px 34px 60px}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:6px}
+  h1{font-size:21px;font-weight:800}
+  .crumb{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .crumb .k{font-family:ui-monospace,Menlo,monospace;background:var(--grid);padding:1px 6px;border-radius:4px;font-size:11.5px}
+  .phase{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:10px;
+    padding:11px 16px;margin:16px 0;font-size:13.5px;font-weight:600;display:none}
+  /* KPI grid */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:20px 0}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:15px 17px;box-shadow:var(--shadow)}
+  .kpi .lbl{font-size:11.5px;color:var(--muted);font-weight:700;letter-spacing:.02em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+  .kpi .lbl .ico{width:7px;height:7px;border-radius:2px}
+  .kpi .v{font-size:29px;font-weight:800;margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .kpi .v .u{font-size:14px;color:var(--muted);font-weight:600;margin-left:3px}
+  .kpi .sub{font-size:11.5px;color:var(--faint);margin-top:3px;font-variant-numeric:tabular-nums}
+  .kpi .mini{margin-top:8px;height:24px}
+  /* chart card */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+  .panel h3{font-size:14px;font-weight:700;margin-bottom:2px;display:flex;align-items:center;justify-content:space-between}
+  .panel h3 .leg{font-size:11.5px;font-weight:600;color:var(--muted);display:flex;gap:14px}
+  .panel h3 .leg i{display:inline-flex;align-items:center;gap:5px;font-style:normal}
+  .panel h3 .leg .sw{width:11px;height:3px;border-radius:2px;display:inline-block}
+  .chart{width:100%;height:180px;margin-top:10px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .prog-wrap{margin-top:4px}
+  .pbar{background:var(--grid);border-radius:8px;height:20px;overflow:hidden}
+  .pfill{height:100%;background:linear-gradient(90deg,#34d399,#059669);border-radius:8px;
+    transition:width .6s;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-size:11px;font-weight:700;min-width:42px}
+  .util-badge{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--ta);
+    background:#f3ebff;border-radius:7px;padding:7px 12px;display:inline-block;margin-top:4px}
+  .foot{font-size:11.5px;color:var(--faint);margin-top:24px;border-top:1px solid var(--border);padding-top:14px}
+  .foot .k{font-family:ui-monospace,Menlo,monospace;background:var(--grid);padding:1px 5px;border-radius:4px}
+</style></head>
+<body>
+  <aside class="side">
+    <div class="logo">Agentic Serving<span class="s">实时监控 · ThunderAgent</span></div>
+    <nav>
+      <a class="on" href="#live">📡 实时指标</a>
+      <a href="#charts">📈 时序图表</a>
+      <a href="/index.html">🗂 实验中心</a>
+      <a href="/ta-vs-nota-cc16.html">🎯 A/B/C 对比</a>
+      <a href="/kv-tiering-architecture.html">🏗 KV 分层</a>
+      <a href="/thunderagent-schedule.html">⚙️ TA 调度</a>
+    </nav>
+    <div class="stat">
+      <div class="live" id="live"><span class="dot"></span><span id="livetxt">连接中…</span></div>
+      <div style="margin-top:6px" id="arm2">—</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="top">
+      <div>
+        <h1 id="title">实验监控</h1>
+        <div class="crumb" id="crumb">加载中…</div>
+      </div>
+    </div>
+    <div class="phase" id="phase"></div>
+
+    <section id="live">
+    <div class="kpis">
+      <div class="kpi"><div class="lbl"><span class="ico" style="background:var(--ok)"></span>已完成 SESSION</div>
+        <div class="v"><span id="done">—</span><span class="u" id="total">/—</span></div>
+        <div class="prog-wrap" style="margin-top:9px"><div class="pbar" style="height:8px"><div class="pfill" id="donebar" style="width:0%"></div></div></div></div>
+      <div class="kpi"><div class="lbl"><span class="ico" style="background:var(--ok)"></span>请求 OK / ERR</div>
+        <div class="v"><span id="ok" style="color:var(--ok)">—</span><span class="u">/</span><span id="err" style="color:var(--red);font-size:22px">—</span></div>
+        <div class="sub" id="errpct">—</div></div>
+      <div class="kpi"><div class="lbl"><span class="ico" style="background:var(--ta)"></span>累计 PAUSE</div>
+        <div class="v" style="color:var(--ta)" id="psum">—</div>
+        <div class="sub">program 被暂停总次数</div></div>
+      <div class="kpi"><div class="lbl"><span class="ico" style="background:var(--ok)"></span>累计 RESUME</div>
+        <div class="v" style="color:var(--ok)" id="resume">—</div>
+        <div class="sub">program 被恢复总次数 · 当前暂停 <span id="stillp">0</span> · 在飞 <span id="run">0</span></div></div>
+    </div>
+    </section>
+
+    <section id="charts">
+    <div class="two">
+      <div class="panel"><h3>GPU 实测 vs TA 预估 util
+        <span class="leg"><i><span class="sw" style="background:var(--blue)"></span>GPU实测</i><i><span class="sw" style="background:var(--ta)"></span>TA预估</i></span></h3>
+        <svg class="chart" id="utilChart" viewBox="0 0 500 180"></svg>
+        <div style="font-size:10.5px;color:var(--faint);text-align:center;margin-top:-4px">Y: util(%) · TA预估≈0.95触发pause,GPU实测常低得多(sleep中的program未占KV)</div></div>
+      <div class="panel"><h3>累计 Pause vs Resume
+        <span class="leg"><i><span class="sw" style="background:var(--ta)"></span>累计 pause</i><i><span class="sw" style="background:var(--ok)"></span>累计 resume</i></span></h3>
+        <svg class="chart" id="runChart" viewBox="0 0 500 180"></svg>
+        <div style="font-size:10.5px;color:var(--faint);text-align:center;margin-top:-4px">Y: 累计次数 · X: 时间(HH:MM) · 削峰(pause)与恢复(resume)的累积对比</div></div>
+    </div>
+    <div class="panel"><h3>HiCache host offload
+        <span class="leg"><i><span class="sw" style="background:var(--warn)"></span>host_used / 750272</i></span></h3>
+      <svg class="chart" id="hostChart" viewBox="0 0 500 180" style="height:150px"></svg>
+      <div style="font-size:10.5px;color:var(--faint);text-align:center;margin-top:-2px">Y: host_used tokens (k) · X: 时间(HH:MM) · A 无 HiCache 恒为 0</div></div>
+    <div class="two">
+      <div class="panel"><h3>TPOT P50 <span style="font-size:10px;color:var(--ta);font-weight:700;background:#f3ebff;padding:1px 6px;border-radius:4px">实时</span>
+        <span class="leg"><i><span class="sw" style="background:var(--ta)"></span>TPOT(ms/token)</i></span></h3>
+        <svg class="chart" id="latChart" viewBox="0 0 500 180"></svg>
+        <div style="font-size:10.5px;color:var(--faint);text-align:center;margin-top:-4px">Y: ms/token · 每token解码延迟(TTFT见上方KPI)</div></div>
+      <div class="panel"><h3>Session 端到端延迟 P50
+        <span class="leg"><i><span class="sw" style="background:var(--ok)"></span>e2e(s)</i></span></h3>
+        <svg class="chart" id="e2eChart" viewBox="0 0 500 180"></svg>
+        <div style="font-size:10.5px;color:var(--faint);text-align:center;margin-top:-4px">Y: 秒 · 整个session(多轮)从头到尾耗时</div></div>
+    </div>
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi"><div class="lbl"><span class="ico" style="background:var(--blue)"></span>TTFT P50</div><div class="v" id="ttftv">—<span class="u">ms</span></div></div>
+      <div class="kpi"><div class="lbl"><span class="ico" style="background:var(--ta)"></span>TPOT P50</div><div class="v" id="tpotv">—<span class="u">ms</span></div></div>
+      <div class="kpi"><div class="lbl"><span class="ico" style="background:var(--ok)"></span>Session E2E P50</div><div class="v" id="e2ev">—<span class="u">s</span></div></div>
+    </div>
+    <div class="panel"><h3>最近一次 TA 削峰</h3>
+      <div class="util-badge" id="utillog">尚无 pause 触发</div></div>
+    </section>
+
+    <div class="foot">
+      更新于 <span id="ts">—</span> · 数据源：replay 进度 + TA router 日志 + SGLang metrics(<span class="k">:8091</span>) · 本页每 5s 刷新，历史 80 点滚动
+    </div>
+  </main>
+
+<script>
+const $=id=>document.getElementById(id);
+let lastTs="";
+const W=500,H=180,PL=42,PR=12,PT=12,PB=24; // 左/右/上/下留白给坐标
+function fmtY(v,mx){ if(mx<=1.001) return (v*100).toFixed(0)+'%'; if(mx>=1000) return (v/1000).toFixed(0)+'k'; return v.toFixed(0); }
+function axes(mx,data,xsec){
+  // Y轴刻度(5档) + 网格线
+  let s='';
+  for(let g=0;g<=4;g++){
+    const gy=PT+(H-PT-PB)*g/4;
+    const val=mx*(1-g/4);
+    s+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>`;
+    s+=`<text x="${PL-6}" y="${(gy+3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--faint)">${fmtY(val,mx)}</text>`;
+  }
+  // X轴时间标签(首/中/尾)
+  const n=data.length;
+  if(n>=1){
+    const xs=[0,Math.floor((n-1)/2),n-1].filter((v,i,a)=>a.indexOf(v)===i);
+    xs.forEach(i=>{
+      const x=PL+(W-PL-PR)*(n<=1?0:i/(n-1));
+      s+=`<text x="${x.toFixed(1)}" y="${H-6}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}" font-size="9.5" fill="var(--faint)">${(data[i].ts||'').slice(0,xsec?8:5)}</text>`;
+    });
+  }
+  return s;
+}
+function line(svg,data,key,color,{max=null,fill=false,xsec=false}={}){
+  const el=$(svg);if(!el)return;
+  if(!data.length){el.innerHTML='';return;}
+  const g=(p,k)=>Number(p[k])||0;
+  const vals=data.map(d=>g(d,key));
+  const mx=max!==null?max:Math.max(...vals,1e-6)*1.1;
+  const n=data.length;
+  const x=i=>PL+(W-PL-PR)*(n<=1?0.5:i/(n-1));
+  const y=v=>H-PB-(H-PT-PB)*Math.min(1,v/mx);
+  let d='';data.forEach((p,i)=>{d+=(i?'L':'M')+x(i).toFixed(1)+','+y(g(p,key)).toFixed(1)+' ';});
+  let area='';if(fill){area=`<path d="${d}L${x(n-1)},${H-PB}L${x(0)},${H-PB}Z" fill="${color}" opacity="0.08"/>`;}
+  const last=g(data[n-1],key);
+  el.innerHTML=axes(mx,data,xsec)+area+`<path d="${d}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/>`+
+    `<circle cx="${x(n-1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="3.5" fill="${color}"/>`+
+    `<text x="${(x(n-1)-4).toFixed(1)}" y="${(y(last)-7).toFixed(1)}" text-anchor="end" font-size="10.5" font-weight="700" fill="${color}">${fmtY(last,mx)}</text>`;
+}
+function line2(svg,data,k1,c1,k2,c2,{max=null}={}){
+  const el=$(svg);if(!el||!data.length){if(el)el.innerHTML='';return;}
+  const g=(p,k)=>Number(p[k])||0; // 缺失字段兜底为0,防NaN
+  const n=data.length;
+  const mx=max!==null?max:Math.max(...data.map(d=>Math.max(g(d,k1),g(d,k2))),1)*1.15;
+  const x=i=>PL+(W-PL-PR)*(n<=1?0.5:i/(n-1));
+  const y=v=>H-PB-(H-PT-PB)*Math.min(1,v/mx);
+  const path=k=>{let d='';data.forEach((p,i)=>{d+=(i?'L':'M')+x(i).toFixed(1)+','+y(g(p,k)).toFixed(1)+' ';});return d;};
+  const l1=g(data[n-1],k1),l2=g(data[n-1],k2);
+  el.innerHTML=axes(mx,data)+`<path d="${path(k1)}" fill="none" stroke="${c1}" stroke-width="2.2"/>`+
+    `<path d="${path(k2)}" fill="none" stroke="${c2}" stroke-width="2.2"/>`+
+    `<circle cx="${x(n-1).toFixed(1)}" cy="${y(l1).toFixed(1)}" r="3" fill="${c1}"/>`+
+    `<circle cx="${x(n-1).toFixed(1)}" cy="${y(l2).toFixed(1)}" r="3" fill="${c2}"/>`;
+}
+async function tick(){
+  try{
+    const [m,hraw]=await Promise.all([
+      fetch('metrics.json?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()),
+      fetch('history.json?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[])
+    ]);
+    $('arm2').textContent=(m.arm||'—')+' · '+(m.ts||'');
+    // 动态标题+配置(跟随当前实验)
+    $('title').textContent=(m.arm||'实验监控');
+    if(m.cc&&m.cc!=='?'){
+      $('crumb').innerHTML=`cc <span class="k">${m.cc}</span> · trace <span class="k">${m.trace||'?'}</span> · GPU pool <span class="k">${m.kv||'?'}</span> · <span class="k">${m.route||''}</span>`;
+    }
+    const pb=$('phase');
+    if(m.phase&&m.phase!=='running'){pb.style.display='block';pb.textContent='⏳ '+(m.progress||m.phase)+' — replay 未开始，指标待就绪';}
+    else pb.style.display='none';
+    const mt=(m.progress||'').match(/(\d+) done, ok=(\d+) err=(\d+)/);
+    let done=0,ok=0,err=0;if(mt){done=+mt[1];ok=+mt[2];err=+mt[3];}
+    const total=parseInt(m.total)||100;
+    $('done').textContent=done;$('total').textContent='/'+total;$('donebar').style.width=Math.min(100,done/total*100)+'%';
+    $('ok').textContent=ok;$('err').textContent=err;
+    const tot=ok+err;$('errpct').textContent=tot?('失败率 '+(err/tot*100).toFixed(2)+'%'):'—';
+    $('psum').textContent=m.paused_sum||'0';
+    $('resume').textContent=m.resume||'0';
+    $('stillp').textContent=m.still_paused||'0';
+    $('run').textContent=m.running||'0';
+    if(m.last_util)$('utillog').textContent='🟣 '+m.last_util+'  · TA 把活跃 util 从 ~0.95 削回 ~0.80';
+    $('ts').textContent=m.ts||'—';
+    const live=$('live');
+    if(m.ts!==lastTs){live.classList.remove('stale');$('livetxt').textContent='LIVE · '+m.ts;lastTs=m.ts;}
+    else{live.classList.add('stale');$('livetxt').textContent='等待更新…';}
+    // charts (统一5s): GPU实测vs TA预估 · pause/resume · host
+    const H=Array.isArray(hraw)?hraw:[];
+    line2('utilChart',H,'gpu','#2563eb','tau','#7c3aed',{max:1.0});
+    line2('runChart',H,'psum','#7c3aed','resume','#059669');
+    line('hostChart',H,'host','#d97706',{max:750272,fill:true});
+    // 延迟KPI(ttft秒→ms) + 图
+    const ttms=(parseFloat(m.ttft_p50)||0)*1000;
+    $('ttftv').innerHTML=ttms.toFixed(0)+'<span class="u">ms</span>';
+    $('tpotv').innerHTML=(parseFloat(m.tpot_p50)||0).toFixed(1)+'<span class="u">ms</span>';
+    $('e2ev').innerHTML=(parseFloat(m.e2e_p50)||0).toFixed(0)+'<span class="u">s</span>';
+    line('latChart',H,'tpot','#7c3aed',{fill:true});
+    line('e2eChart',H,'e2e','#059669',{fill:true});
+  }catch(e){$('live').classList.add('stale');$('livetxt').textContent='等待数据…';}
+}
+tick();setInterval(tick,5000);
+</script>
+</body></html>
