@@ -4,7 +4,7 @@ HIST=/raid/davilu/live_history.json
 [ -f "$HIST" ] || echo '[]' > "$HIST"
 while true; do
   EP=$(docker exec ta-repro bash -c "etcdctl --endpoints=http://127.0.0.1:2379 get --prefix v1 --keys-only 2>/dev/null|grep -c backend/generate" 2>/dev/null)
-  STAGE=$(docker exec ta-repro bash -c "grep -aoE 'loading shards: [0-9]+%|Capture cuda graph|Init torch|server is fired' /tmp/glmw_Asub.log 2>/dev/null|tail -1" 2>/dev/null)
+  STAGE=$(docker exec ta-repro bash -c "grep -aoE 'loading shards: [0-9]+%|Capture cuda graph|Init torch|server is fired' /tmp/glmw_new.log 2>/dev/null|tail -1" 2>/dev/null)
   REPLAY=$(docker exec ta-repro bash -c "pgrep -f 'aa_replay.*A_sub64'|grep -v grep|wc -l" 2>/dev/null)
   if [ "${REPLAY:-0}" -ge 1 ]; then
     PROG=$(docker exec ta-repro bash -c "cat /tmp/replay_progress.txt 2>/dev/null" 2>/dev/null); PHASE="running"
@@ -16,8 +16,8 @@ while true; do
   PAUSEDSUM=$(docker exec ta-repro bash -c "strings /tmp/ta_Asub.log 2>/dev/null|grep -oE 'paused=[0-9]+ marked'|grep -oE '[0-9]+'|awk '{s+=\$1}END{print s+0}'" 2>/dev/null)
   # TA最新预估util(触发前值,util=X ->的X)
   TAUTIL=$(docker exec ta-repro bash -c "strings /tmp/ta_Asub.log 2>/dev/null|grep -oE 'scheduler.util.*util=[0-9.]+'|tail -1|grep -oE 'util=[0-9.]+'|grep -oE '[0-9.]+'" 2>/dev/null)
-  GPU=$(docker exec ta-repro bash -c "tail -c 65536 /tmp/glmw_Asub.log 2>/dev/null|grep -aoE 'token usage: [0-9.]+'|tail -1|grep -oE '[0-9.]+$'" 2>/dev/null)
-  RUN=$(docker exec ta-repro bash -c "tail -c 65536 /tmp/glmw_Asub.log 2>/dev/null|grep -aoE '#running-req: [0-9]+'|tail -1|grep -oE '[0-9]+$'" 2>/dev/null)
+  GPU=$(docker exec ta-repro bash -c "tail -c 65536 /tmp/glmw_new.log 2>/dev/null|grep -aoE 'token usage: [0-9.]+'|tail -1|grep -oE '[0-9.]+$'" 2>/dev/null)
+  RUN=$(docker exec ta-repro bash -c "tail -c 65536 /tmp/glmw_new.log 2>/dev/null|grep -aoE '#running-req: [0-9]+'|tail -1|grep -oE '[0-9]+$'" 2>/dev/null)
   HOST=$(docker exec ta-repro bash -c "curl -s --max-time 3 http://localhost:8091/metrics 2>/dev/null|grep -E 'hicache_host_used_tokens\{'|grep -oE '[0-9.]+$'" 2>/dev/null)
   LASTUTIL=$(docker exec ta-repro bash -c "strings /tmp/ta_Asub.log 2>/dev/null|grep -oE 'util=[0-9.]+ -> [0-9.]+'|tail -1" 2>/dev/null)
   # 实验元信息(从replay命令行+worker日志解析)
@@ -26,7 +26,7 @@ while true; do
   EXPCC=$(echo "$RCMD"|grep -oE '\-\-concurrency [0-9]+'|awk '{print $2}')
   EXPTRACE=$(echo "$RCMD"|grep -oE 'dsv4_[a-z0-9]+'|head -1)
   EXPHC=$(echo "$RCMD"|grep -q glm52ta && echo "过TA" || echo "直连")
-  EXPKV=$(docker exec ta-repro bash -c "grep -aoE 'max_total_num_tokens=[0-9]+' /tmp/glmw_Asub.log 2>/dev/null|tail -1|grep -oE '[0-9]+'" 2>/dev/null)
+  EXPKV=$(docker exec ta-repro bash -c "grep -aoE 'max_total_num_tokens=[0-9]+' /tmp/glmw_new.log 2>/dev/null|tail -1|grep -oE '[0-9]+'" 2>/dev/null)
   TTFT_P50=$(echo "$PROG"|grep -oE "ttft_p50=[0-9.]+"|sed "s/ttft_p50=//")
   TPOT_P50=$(echo "$PROG"|grep -oE "tpot_p50=[0-9.]+"|sed "s/tpot_p50=//")
   E2E_P50=$(echo "$PROG"|grep -oE "e2e_p50=[0-9.]+"|sed "s/e2e_p50=//")
