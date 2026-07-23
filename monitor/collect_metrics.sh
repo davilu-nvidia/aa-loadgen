@@ -5,7 +5,8 @@ HIST=/raid/davilu/live_history.json
 while true; do
   EP=$(docker exec ta-repro bash -c "etcdctl --endpoints=http://127.0.0.1:2379 get --prefix v1 --keys-only 2>/dev/null|grep -c backend/generate" 2>/dev/null)
   STAGE=$(docker exec ta-repro bash -c "grep -aoE 'loading shards: [0-9]+%|Capture cuda graph|Init torch|server is fired' /tmp/glmw_new.log 2>/dev/null|tail -1" 2>/dev/null)
-  REPLAY=$(docker exec ta-repro bash -c "pgrep -f 'aa_replay.*A_sub64'|grep -v grep|wc -l" 2>/dev/null)
+  # 泛匹配任意arm的replay进程(旧版硬编码A_sub64导致其他实验一直显示warming)
+  REPLAY=$(docker exec ta-repro bash -c "pgrep -f 'aa_loadgen.py replay|aa_replay'|grep -v grep|wc -l" 2>/dev/null)
   if [ "${REPLAY:-0}" -ge 1 ]; then
     PROG=$(docker exec ta-repro bash -c "cat /tmp/replay_progress.txt 2>/dev/null" 2>/dev/null); PHASE="running"
   elif [ "${EP:-0}" -ge 1 ]; then PROG="worker就绪,replay即将开始"; PHASE="warming"
@@ -21,7 +22,7 @@ while true; do
   HOST=$(docker exec ta-repro bash -c "curl -s --max-time 3 http://localhost:8091/metrics 2>/dev/null|grep -E 'hicache_host_used_tokens\{'|grep -oE '[0-9.]+$'" 2>/dev/null)
   LASTUTIL=$(docker exec ta-repro bash -c "strings /tmp/ta_Asub.log 2>/dev/null|grep -oE 'util=[0-9.]+ -> [0-9.]+'|tail -1" 2>/dev/null)
   # 实验元信息(从replay命令行+worker日志解析)
-  RCMD=$(docker exec ta-repro bash -c "pgrep -af aa_replay|grep -v grep|head -1" 2>/dev/null)
+  RCMD=$(docker exec ta-repro bash -c "pgrep -af 'aa_loadgen.py replay|aa_replay'|grep -v grep|head -1" 2>/dev/null)
   EXPARM=$(echo "$RCMD"|grep -oE '\-\-arm [A-Za-z0-9_]+'|awk '{print $2}')
   EXPCC=$(echo "$RCMD"|grep -oE '\-\-concurrency [0-9]+'|awk '{print $2}')
   EXPTRACE=$(echo "$RCMD"|grep -oE 'dsv4_[a-z0-9]+'|head -1)

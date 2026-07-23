@@ -27,7 +27,6 @@ echo "[stack] endpoint=$EP models=$M"
 [ "$EP" -lt 1 ] || [ "$M" != "glm52ta" ] && { echo "🔴 栈不健康,先起worker+TA+fe"; exit 1; }
 
 # 4. 预热(文件方式,避免转义)
-printf '%s' '{"model":"glm52ta","messages":[{"role":"user","content":"hi"}],"max_tokens":4}' > /tmp/wr.json 2>/dev/null
 $D "printf '%s' '{\"model\":\"glm52ta\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4}' > /tmp/wr.json"
 HC_CODE=$($D "curl -s -o /dev/null -w '%{http_code}' --max-time 40 http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -H 'x-dynamo-session-id: warm' -d @/tmp/wr.json")
 echo "[warm] $HC_CODE"
@@ -35,7 +34,7 @@ echo "[warm] $HC_CODE"
 # 5. 发replay(容器内nohup,抗SSH断)
 MODEL="glm52ta"; EXTRA="--agent-context"
 [ "$HC" = "noTA" ] && { MODEL="glm52"; EXTRA=""; }
-$D "cd /workspace/davilu/replay_pipeline && setsid nohup python3 aa_replay.py --url http://localhost:8000/v1 --model $MODEL --replay $DAG --concurrency $CC --arm $ARM $EXTRA --duration 0 --out /tmp/${ARM}.json > /tmp/${ARM}_replay.log 2>&1 &"
+$D "cd /workspace/davilu/replay_pipeline && setsid nohup python3 aa_loadgen.py replay --url http://localhost:8000/v1 --model $MODEL --replay $DAG --concurrency $CC --arm $ARM $EXTRA --duration 0 --out /tmp/${ARM}.json --progress-file /tmp/replay_progress.txt > /tmp/${ARM}_replay.log 2>&1 &"
 sleep 5
-echo "[replay] $($D "ps -eo args|grep aa_replay|grep $ARM|grep -v grep|wc -l")个进程 | 监控页total会自动=${TRACE}对应条数"
+echo "[replay] $($D "ps -eo args|grep 'aa_loadgen.py replay'|grep $ARM|grep -v grep|wc -l")个进程 | 监控页total会自动=${TRACE}对应条数"
 echo "===== 启动完成 监控:http://localhost:8899/live_monitor/monitor.html ====="
